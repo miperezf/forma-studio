@@ -1,0 +1,13 @@
+{
+  "name": "forma-studio-beta-ux",
+  "private": true,
+  "version": "0.15.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs tests/legacy/*.test.mjs",
+    "build:standalone": "node scripts/build-standalone.mjs",
+    "e2e": "python3 tests/browser_engine_flow.py",
+    "serve": "python3 -m http.server 8000"
+  },
+  "description": "Beta visual FORMA Studio 0.6: UI aprobada de la 0.5.2 con el cotizador conectado al motor calculation/v1 (bundle en src/vendor)."
+}

@@ -1,0 +1,31 @@
+# Despliegue MANUAL del staging con datos ficticios. Credenciales: secreto del repositorio
+# FIREBASE_SERVICE_ACCOUNT_STAGING (JSON de una cuenta de servicio con rol "Firebase Hosting Admin" SOLO en el
+# proyecto staging) y variable FIREBASE_PROJECT_STAGING. Nunca se pegan en el chat ni en el repositorio.
+name: deploy-staging
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck && npm run arch && npm test && npm run test:beta
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install playwright==1.56.0 && python -m playwright install --with-deps chromium
+      - run: node scripts/build-staging.mjs
+      - run: FORMA_SERVE_DIR=dist/staging FORMA_APPLY_FIREBASE_HEADERS=1 python3 apps/beta-web/tests/browser_engine_flow.py
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        id: deploy
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}
+          projectId: ${{ vars.FIREBASE_PROJECT_STAGING }}
+          channelId: live
+      - name: Verificar la URL publicada (no solo localhost)
+        run: FORMA_BASE_URL="${{ steps.deploy.outputs.details_url }}" python3 apps/beta-web/tests/browser_engine_flow.py

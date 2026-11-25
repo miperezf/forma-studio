@@ -1,0 +1,31 @@
+# CI con acceso real al registro npm: ejecuta las herramientas que NO se pudieron correr en el entorno de desarrollo
+# (Vitest, ESLint, dependency-cruiser, fast-check, tsd) además de tsc, arquitectura, tests de la Beta y E2E.
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run arch
+      - run: npm test            # Vitest REAL
+      - run: npm run lint        # ESLint
+      - run: npm run depcruise   # dependency-cruiser
+      - run: npm run test:beta
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install playwright==1.56.0 && python -m playwright install --with-deps chromium
+      - run: node scripts/build-staging.mjs
+      - run: npm run e2e
+      - run: FORMA_SERVE_DIR=dist/staging FORMA_APPLY_FIREBASE_HEADERS=1 python3 apps/beta-web/tests/browser_engine_flow.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: evidencias-e2e, path: apps/beta-web/dist/e2e }

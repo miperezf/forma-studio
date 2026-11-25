@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "staging": "REEMPLAZAR-forma-studio-staging",
+    "production": "REEMPLAZAR-forma-studio-prod"
+  }
+}

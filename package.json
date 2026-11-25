@@ -1,0 +1,51 @@
+{
+  "name": "app-web-3d",
+  "private": true,
+  "version": "0.15.0",
+  "type": "module",
+  "description": "FORMA Studio: motor calculation/v1, cotizador único, CRM y flujo comercial; Beta 0.8 con modo nube (Firebase Auth + Firestore), respaldo manual y régimen tributario confirmado por el propietario.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "arch": "node scripts/check-architecture.mjs",
+    "lint": "eslint .",
+    "depcruise": "depcruise src --config .dependency-cruiser.cjs",
+    "build:bridge": "node scripts/build-beta-bridge.mjs",
+    "build:standalone": "node apps/beta-web/scripts/build-standalone.mjs",
+    "test:beta": "node --test apps/beta-web/tests/*.test.mjs apps/beta-web/tests/legacy/*.test.mjs",
+    "e2e": "python3 apps/beta-web/tests/browser_engine_flow.py && python3 apps/beta-web/tests/browser_quick_flow.py && python3 apps/beta-web/tests/browser_workflow.py && python3 apps/beta-web/tests/browser_draft_delete.py && python3 apps/beta-web/tests/browser_backup.py && python3 apps/beta-web/tests/browser_materials.py && python3 apps/beta-web/tests/browser_multicolor.py && python3 apps/beta-web/tests/browser_last_plate.py && python3 apps/beta-web/tests/browser_production_ui.py && python3 apps/beta-web/tests/browser_order_correction.py && python3 apps/beta-web/tests/browser_import_bambu.py && python3 apps/beta-web/tests/browser_today.py && python3 apps/beta-web/tests/browser_cloud_flow.py",
+    "check": "npm run typecheck && npm run arch && npm run lint:guard && npm run test && npm run lint && npm run depcruise && npm run test:beta",
+    "build:staging": "node scripts/build-staging.mjs",
+    "e2e:staging": "FORMA_SERVE_DIR=dist/staging FORMA_APPLY_FIREBASE_HEADERS=1 python3 apps/beta-web/tests/browser_engine_flow.py",
+    "verify:staging": "python3 apps/beta-web/tests/browser_engine_flow.py",
+    "deploy:staging": "bash scripts/deploy-staging.sh",
+    "deploy:production": "bash scripts/deploy-production.sh",
+    "build:cloud:staging": "node scripts/build-cloud.mjs staging",
+    "build:cloud:production": "node scripts/build-cloud.mjs production",
+    "test:rules": "firebase --config firebase.emulator.json emulators:exec --only firestore --project demo-forma-rules \"node --test tests/rules/firestore.rules.test.mjs\"",
+    "e2e:cloud": "python3 apps/beta-web/tests/browser_cloud_flow.py",
+    "e2e:standalone": "node apps/beta-web/scripts/build-standalone.mjs && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_backup.py && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_engine_flow.py && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_materials.py && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_multicolor.py && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_last_plate.py && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_order_correction.py && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_import_bambu.py && FORMA_SERVE_DIR=dist FORMA_ENTRY=FORMA_STUDIO_BETA.html python3 apps/beta-web/tests/browser_today.py",
+    "catalog:filaments": "node scripts/build-filament-catalog.mjs",
+    "lint:guard": "node scripts/lint-guard.mjs"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "dependency-cruiser": "^17.0.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.0.0",
+    "fast-check": "^4.0.0",
+    "tsd": "^0.33.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vite": "^7.0.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

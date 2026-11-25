@@ -1,0 +1,132 @@
+rules_version = '2';
+// FORMA Studio — reglas de Firestore. PLANTILLA: scripts/build-cloud.mjs inserta en la lista de isOwner() los correos
+// de .env.local (FORMA_OWNER_EMAILS) y genera firestore.rules (no versionado). Denegación por defecto.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in [__OWNER_EMAILS__];
+    }
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function wsPath(ws, coll, id) {
+      return /databases/$(database)/documents/workspaces/$(ws)/$(coll)/$(id);
+    }
+
+    match /workspaces/{ws} {
+
+      // Catálogo, CRM y proyectos: el propietario los administra. El id del documento = id de la entidad.
+      match /clients/{id} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner() && request.resource.data.id == id;
+      }
+      match /materials/{id} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner() && request.resource.data.id == id;
+      }
+      match /printers/{id} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner() && request.resource.data.id == id;
+      }
+      match /projects/{id} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner() && request.resource.data.id == id;
+      }
+      // Productos frecuentes: plantillas para cotizar (no contienen precios ni datos del cliente).
+      match /products/{id} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner() && request.resource.data.id == id;
+      }
+
+      // Configuración. Los contadores de folios solo crecen (los folios nunca se reutilizan).
+      match /settings/{id} {
+        allow read: if isOwner();
+        allow create, update: if isOwner() && id in ['shop', 'meta', 'counters']
+          && (id != 'counters' || resource == null
+              || (request.resource.data.get('lastQuoteNumber', 0) >= resource.data.get('lastQuoteNumber', 0)
+                  && request.resource.data.get('lastOrderNumber', 0) >= resource.data.get('lastOrderNumber', 0)));
+        allow delete: if false;
+      }
+
+      // Cotización INTERNA (costos, snapshot del motor). Importes y snapshot inmutables siempre: recotizar = nueva revisión.
+      // Vigencia, condiciones y emisión solo cambian en Borrador. Solo se elimina un Borrador sin pedido.
+      match /internalQuotes/{id} {
+        allow read: if isOwner();
+        allow create: if isOwner() && request.resource.data.id == id;
+        allow update: if isOwner()
+          && !changed().hasAny(['id', 'clientId', 'quantity', 'net', 'vat', 'gross', 'unitPrice', 'calculation',
+                                 'calculationVersion', 'formState', 'inputSnapshot', 'profileRefs', 'createdAt',
+                                 'customerQuoteId', 'revisionOf', 'revision', 'snapshot', 'costBreakdown'])
+          && (resource.data.status == 'Borrador' || !changed().hasAny(['validDays', 'terms', 'issuance', 'project']));
+        allow delete: if isOwner() && resource.data.status == 'Borrador'
+          && !exists(wsPath(ws, 'orderLocks', id));
+      }
+
+      // Documento COMERCIAL (lo único que ve el cliente): whitelist de campos aplicada también en el servidor.
+      match /customerQuotes/{id} {
+        allow read: if isOwner();
+        allow create: if isOwner() && request.resource.data.id == id
+          && request.resource.data.kind == 'CustomerQuote'
+          && request.resource.data.keys().hasOnly(['kind', 'schemaVersion', 'id', 'clientName', 'project', 'createdAt',
+              'validDays', 'terms', 'currency', 'taxTreatment', 'lines', 'quantity', 'unitPrice', 'vatAmount', 'total']);
+        allow update: if isOwner()
+          && changed().hasOnly(['createdAt', 'validDays', 'terms'])
+          && get(wsPath(ws, 'internalQuotes', id)).data.status == 'Borrador';
+        allow delete: if isOwner() && !existsAfter(wsPath(ws, 'internalQuotes', id));
+      }
+
+      // Candado: UN pedido por cotización. Solo se crea (nunca se modifica ni se borra), junto con su pedido.
+      match /orderLocks/{quoteId} {
+        allow read: if isOwner();
+        allow create: if isOwner() && request.resource.data.quoteId == quoteId
+          && getAfter(wsPath(ws, 'orders', request.resource.data.orderId)).data.quoteId == quoteId;
+        allow update, delete: if false;
+      }
+
+      // Pedido: importe acordado y vínculo inmutables; pagos, consumos e historial solo se agregan al final; se anula, nunca se elimina.
+      match /orders/{id} {
+        allow read: if isOwner();
+        allow create: if isOwner() && request.resource.data.id == id
+          && (request.resource.data.get('quoteId', null) == null
+              || getAfter(wsPath(ws, 'orderLocks', request.resource.data.quoteId)).data.orderId == id);
+        allow update: if isOwner()
+          && !changed().hasAny(['id', 'quoteId', 'clientId', 'amount', 'agreedQuote', 'createdAt'])
+          && request.resource.data.get('payments', []).size() >= resource.data.get('payments', []).size()
+          // Sin pagos previos no hay prefijo que comparar (el corte [0:0] de una lista vacía no es evaluable).
+          && (resource.data.get('payments', []).size() == 0
+              || request.resource.data.get('payments', [])[0:resource.data.get('payments', []).size()]
+                 == resource.data.get('payments', []))
+          // Consumos REALES de filamento: igual que los pagos, solo se agregan (las correcciones son registros nuevos).
+          && request.resource.data.get('consumptions', []).size() >= resource.data.get('consumptions', []).size()
+          && (resource.data.get('consumptions', []).size() == 0
+              || request.resource.data.get('consumptions', [])[0:resource.data.get('consumptions', []).size()]
+                 == resource.data.get('consumptions', []))
+          // Reserva (comprometido): nace con el pedido; sus gramos y fecha no cambian; solo pasa de ACTIVE a RELEASED.
+          && (!('reservation' in resource.data)
+              || (('reservation' in request.resource.data)
+                  && request.resource.data.reservation.items == resource.data.reservation.items
+                  && request.resource.data.reservation.at == resource.data.reservation.at
+                  && (request.resource.data.reservation.status == resource.data.reservation.status
+                      || (resource.data.reservation.status == 'ACTIVE' && request.resource.data.reservation.status == 'RELEASED'))))
+          // Historial del pedido: solo se agregan movimientos (correcciones y anulación quedan auditadas).
+          && request.resource.data.get('events', []).size() >= resource.data.get('events', []).size()
+          && (resource.data.get('events', []).size() == 0
+              || request.resource.data.get('events', [])[0:resource.data.get('events', []).size()]
+                 == resource.data.get('events', []))
+          // Anulación: requiere motivo; es definitiva (no cambia estado ni motivo) y ya no admite abonos.
+          && (request.resource.data.get('status', '') != 'Anulado'
+              || (request.resource.data.get('cancelled', null) is map
+                  && request.resource.data.cancelled.get('reason', '') is string
+                  && request.resource.data.cancelled.get('reason', '').size() >= 3))
+          && (resource.data.get('status', '') != 'Anulado'
+              || (request.resource.data.get('status', '') == 'Anulado'
+                  && request.resource.data.get('cancelled', null) == resource.data.get('cancelled', null)
+                  && request.resource.data.get('payments', []).size() == resource.data.get('payments', []).size()));
+        allow delete: if false;
+      }
+    }
+  }
+}
